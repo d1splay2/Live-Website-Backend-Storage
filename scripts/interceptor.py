@@ -16,7 +16,6 @@ producer = Producer(producer_config)
 class KafkaHTTPHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         data = self.rfile.read(int(self.headers.get('Content-Length')))
-
         topic = 'persons'
 
         try:
@@ -37,5 +36,5 @@ class KafkaHTTPHandler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     server = HTTPServer((url['domain'], url['port']), KafkaHTTPHandler)
-    print(f"HTTP server running on http://{url['domain']}:{url['port']}")
+    print(f"HTTP Interceptor running on http://{url['domain']}:{url['port']}")
     server.serve_forever()

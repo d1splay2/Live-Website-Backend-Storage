@@ -1,7 +1,7 @@
 services:
   kafka:
     image: confluentinc/cp-kafka:8.0.3
-    container_name: kf
+    container_name: kafka
     ports:
       - 9092:9092
     environment:
@@ -11,18 +11,95 @@ services:
       KAFKA_NODE_ID: 1
 
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kf:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
 
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      
+
       KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
 
     volumes:
-      - ./logs:/tmp/kraft-combined-logs
+      - ./kafka/logs:/tmp/kraft-combined-logs
+    networks:
+      - net
 
-volumes:
-  kf:
+  mongodb:
+    image: mongodb/mongodb-community-server:7.0-ubi8
+    container_name: mongodb
+    ports:
+      - 27017:27017
+    environment:
+      - MONGODB_INITDB_ROOT_USERNAME=mongodb
+      - MONGODB_INITDB_ROOT_PASSWORD=mongodb
+    volumes:
+      - ./mongodb:/data/db
+    networks:
+      - net
+
+  mongodb_express:
+    image: mongo-express:latest
+    container_name: mongodb_express
+    ports:
+      - 8082:8081
+    environment:
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+      - ME_CONFIG_MONGODB_PORT=27017
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=mongodb
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=mongodb
+    networks:
+      - net
+    depends_on:
+      - mongodb
+
+  spark-master:
+    image: spark:python3
+    container_name: spark-master
+    ports:
+      - 8080:8080
+      - 7077:7077
+    environment:
+      - SPARK_MODE=master
+    volumes:
+      - ./spark/app:/opt/spark-app
+      - ./spark/data:/opt/spark-data
+    networks:
+      - net
+    command: >
+      bash -c "/opt/spark/sbin/start-master.sh && tail -f /dev/null"
+
+  spark-worker:
+    image: spark:python3
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    ports:
+      - 8081:8081
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    command: >
+      bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /dev/null"
+    networks:
+      - net
+
+  spark-driver:
+    image: spark:python3
+    container_name: spark-driver
+    depends_on:
+      - spark-master
+      - spark-worker
+    volumes:
+      - ./spark/scripts:/opt/spark-apps
+      - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+    command: >
+      bash -c "tail -f /dev/null" &&
+              "mkdir /tmp/.ivy2"
+    networks:
+      - net
+
+networks:
+  net:
+    driver: bridge
