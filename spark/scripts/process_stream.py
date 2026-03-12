@@ -1,25 +1,102 @@
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import from_json, col
-from pyspark.sql.types import StructType, StructField, StringType, LongType
+from pyspark.sql.types import *
 
-def build_spark_session(
+class MongoDBConfig:
+    def __init__(self, database: str, collection: str):
+        self.database = database
+        self.collection = collection
+        self.config = {
+            f"spark.mongodb.write.connection.uri": f"mongodb://spark:spark@mongodb:27017/{database}?authSource={database}",
+            f"spark.mongodb.write.database": database,
+            f"spark.mongodb.write.collection": collection
+        }
+
+    def get_spark_conf(self) -> SparkConf:
+        """Set mandatory configuration to work"""
+        spark_conf = SparkConf()
+        for key, value in self.config.items():
+            spark_conf.set(key, value)
+        return spark_conf
+
+
+class KafkaStreamProcessor:
+    """
+    Process specified kafka topic in continuous stream
+
+    Args:
+        topic: Where data is being taken
+        database: Name of DB in MongoDB
+        collectin: Name of collection in MongoDB
+        json_schema: Structure now data should be read and written
+        spark_master_domain: Where spark master reside
+        spark_master_ip: str, IP of a spark master
+        kafka_domain: Where kafka reside
+        kafka_master_ip: IP of kafka
+    """
+    def __init__(
+        self,
+        topic: str,
         database: str,
-        collection: str
-    ) -> SparkConf:
-    config = {
-        "spark.mongodb.write.connection.uri": "mongodb://spark:spark@mongodb:27017/test?authSource=test",
-        "spark.mongodb.write.database": database,
-        "spark.mongodb.write.collection": collection,
-        "checkpointLocation": "/tmp/checkpoints/mongodb_persons_stream"
-    }
-    spark_conf = SparkConf()
+        collection: str,
+        json_schema: StructType,
+        spark_master_name: str = "spark-master",
+        spark_master_ip: str = "7077",
+        kafka_master_name: str = "kafka",
+        kafka_master_ip: str = "9092"
+    ):
+        self.topic = topic
+        self.database = database
+        self.collection = collection
+        self.json_schema = json_schema
+        self.spark_master_name = spark_master_name
+        self.spark_master_ip = spark_master_ip
+        self.kafka_master_name = kafka_master_name
+        self.kafka_master_ip = kafka_master_ip
 
-    for k, v in config.items():
-        spark_conf = spark_conf.set(k, v)
-    return spark_conf
+    def build_spark_session(self) -> SparkSession:
+        """Build session with all required variables"""
+        spark_conf = MongoDBConfig(
+                                self.database,
+                                self.collection) \
+                                .get_spark_conf()
 
-def main():
+        return SparkSession.builder \
+            .master(f"spark://{self.spark_master_name}:{self.spark_master_ip}") \
+            .appName(f'from "{self.topic}" topic to {self.database}.{self.collection}') \
+            .config(conf=spark_conf) \
+            .getOrCreate()
+
+    def process_stream(self, spark: SparkSession):
+        # Start reading Kafka topic
+        df = spark \
+            .readStream \
+            .format("kafka") \
+            .option("kafka.bootstrap.servers", f"{self.kafka_master_name}:{self.kafka_master_ip}") \
+            .option("subscribe", self.topic) \
+            .load()
+
+        # Parse JSON
+        df = df \
+            .select(from_json(col("value").cast("string"), self.json_schema).alias("data")) \
+            .select("data.*")
+
+        # Write to MongoDB
+        query = df \
+            .writeStream \
+            .format("mongodb") \
+            .outputMode("append") \
+            .trigger(processingTime="10 seconds") \
+            .option("checkpointLocation", f"/tmp/checkpoints/{self.database}/{self.collection}") \
+            .start()
+
+        # Run indefinitely
+        query.awaitTermination()
+
+
+
+if __name__ == "__main__":
     json_schema = StructType([
         StructField("name", StringType()),
         StructField("country_code", StringType()),
@@ -29,37 +106,15 @@ def main():
         StructField("email", StringType()),
         StructField("ipv4", StringType()),
         StructField("ipv6", StringType()),
-        StructField("user_id", StringType())
+        StructField("user_id", IntegerType())
     ])
 
-    spark_conf = build_spark_session(database='test', collection='persons')
-    spark = \
-        SparkSession.builder \
-            .master('spark://spark-master:7077') \
-            .appName('process_stream') \
-            .config(conf=spark_conf) \
-            .getOrCreate()
+    processor = KafkaStreamProcessor(
+        topic="persons",
+        database="test",
+        collection="raw_persons",
+        json_schema=json_schema
+    )
 
-    df = spark \
-        .readStream \
-        .format('kafka') \
-        .option('kafka.bootstrap.servers', 'kafka:9092') \
-        .option('subscribe', 'persons') \
-        .option('startingOffsets', 'earliest') \
-        .load()
-
-    df = df \
-        .select(from_json(col('value').cast('string'), json_schema).alias('data')) \
-        .select('data.*')
-
-    query = df \
-        .writeStream \
-        .format('mongodb') \
-        .outputMode('append') \
-        .trigger(processingTime='10 seconds') \
-        .option('checkpointLocation', '/tmp/checkpoints/persons_stream') \
-        .start()
-
-    query.awaitTermination()
-
-main()
+    spark = processor.build_spark_session()
+    processor.process_stream(spark)

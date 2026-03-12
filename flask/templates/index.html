@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Flask Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            text-align: center;
+            padding-top: 100px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover:not(:disabled) {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        select {
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            margin: 10px 5px;
+        }
+        .profile-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin: 20px auto;
+            justify-content: center;
+        }
+        .profile-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            width: 300px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            text-align: left;
+        }
+        .profile-card p {
+            margin: 5px 0;
+        }
+        .button-group {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Hello, World!</h1>
+    <p>Welcome to my Flask web page with JSON sender and profile display!</p>
+
+    <!-- Button group with dropdown -->
+    <div class="button-group">
+        <select id="fieldSelect">
+            <option value="">-- Select a field --</option>
+            <option value="name">Name</option>
+            <option value="country_code">Country Code</option>
+            <option value="city">City</option>
+            <option value="postcode">Postcode</option>
+            <option value="email">Email</option>
+            <option value="ipv4">IPv4</option>
+            <option value="ipv6">IPv6</option>
+            <option value="user_id">User ID</option>
+        </select>
+        <button id="sendFieldBtn" disabled>Send Field</button>
+    </div>
+
+    <!-- Container for profiles -->
+    <div id="profileContainer" class="profile-container"></div>
+
+    <div style="margin-top: 20px;">
+        <button id="showMoreBtn" disabled>Show More</button>
+    </div>
+    <script>
+        // --- Configuration ---
+        const BATCH_SIZE = 5;
+        const API_URL = 'http://localhost:5050/persons';
+
+        // --- State ---
+        let filter_column = null;
+        let metadata = null;
+        let isLoading = false;
+        let field = null;
+        let allProfiles = [];               // store all profiles for field extraction
+
+        // --- DOM elements ---
+        const container = document.getElementById('profileContainer');
+        const fieldSelect = document.getElementById('fieldSelect');
+        const sendFieldBtn = document.getElementById('sendFieldBtn');
+        const showMoreBtn = document.getElementById('showMoreBtn');
+
+        // --- Helper: create profile card ---
+        function createProfileCard(profile) {
+            const card = document.createElement('div');
+            card.className = 'profile-card';
+            card.innerHTML = `
+                <h3>${profile.name}</h3>
+                <p><strong>Country:</strong> ${profile.country_code}</p>
+                <p><strong>City:</strong> ${profile.city}</p>
+                <p><strong>Postcode:</strong> ${profile.postcode}</p>
+                <p><strong>Email:</strong> ${profile.email}</p>
+                <p><strong>IPv4:</strong> ${profile.ipv4}</p>
+                <p><strong>IPv6:</strong> ${profile.ipv6}</p>
+                <p><strong>User ID:</strong> ${profile.user_id}</p>
+            `;
+            return card;
+        }
+
+        // --- Enable/disable Send Field button based on selection and profiles ---
+        function updateSendFieldButton() {
+            const hasSelection = fieldSelect.value !== '';
+            const hasProfiles = allProfiles.length > 0;
+            sendFieldBtn.disabled = !(hasSelection && hasProfiles);
+        }
+
+        // --- Fetch profiles (general purpose) ---
+        async function fetchProfiles(payload) {
+            if (isLoading) return;
+            isLoading = true;
+            showMoreBtn.disabled = true;
+            sendFieldBtn.disabled = true;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error ${response.status}`);
+                }
+
+                const profiles = await response.json();
+                return profiles;
+            } catch (error) {
+                console.error('Fetch failed:', error);
+                alert('Error fetching profiles. Check console.');
+                return null;
+            } finally {
+                isLoading = false;
+                // Re-enable other buttons based on state
+                updateSendFieldButton();
+                if (allProfiles.length > 0 && filter_column !== null) {
+                    showMoreBtn.disabled = false;
+                }
+            }
+        }
+
+        // --- Display profiles (replace current content) ---
+        function displayProfiles(profiles, append = false) {
+            if (!append) {
+                container.innerHTML = '';
+                allProfiles = profiles;               // store for field extraction
+                filter_column = profiles.length > 0 ? profiles[profiles.length - 1][filter_column] : null;
+                metadata = profiles.length > 0 ? profiles[profiles.length - 1].user_id : null;
+            } else {
+                allProfiles = allProfiles.concat(profiles);
+                filter_column = profiles.length > 0 ? profiles[profiles.length - 1][filter_column] : filter_column;
+                metadata = profiles.length > 0 ? profiles[profiles.length - 1].user_id : metadata;
+            }
+
+            for (const profile of profiles) {
+                const card = createProfileCard(profile);
+                container.appendChild(card);
+            }
+
+            // Update button states
+            updateSendFieldButton();
+            if (profiles.length < BATCH_SIZE) {
+                showMoreBtn.disabled = true;
+                showMoreBtn.textContent = 'No more profiles';
+            } else {
+                showMoreBtn.disabled = false;
+                showMoreBtn.textContent = 'Show More';
+            }
+        }
+
+        // --- 1. Send JSON (first batch) ---
+        async function resetAndFetchFirstBatch() {
+            container.innerHTML = '';
+            allProfiles = [];
+            filter_column = null;
+            metadata = null;
+            showMoreBtn.textContent = 'Show More';
+            fieldSelect.value = '';          // reset dropdown
+            updateSendFieldButton();
+
+            const profiles = await fetchProfiles({});   // empty payload = first batch
+            if (profiles) {
+                displayProfiles(profiles);
+            }
+        }
+
+        // --- 2. Show More (pagination using user_id) ---
+        async function loadMoreProfiles() {
+            const lastProfile = allProfiles[allProfiles.length - 1];
+            const filter_column_val = lastProfile[field];
+            const metadata_val = lastProfile['user_id'];
+
+            const payload = { [field]: filter_column_val, ['metadata']: metadata_val };
+            const profiles = await fetchProfiles(payload);
+            if (profiles) {
+                displayProfiles(profiles, true);   // append
+            }
+        }
+
+        // --- 3. Send Field (filter by selected field from last profile) ---
+        async function sendFieldFilter() {
+            if (fieldSelect.value == field) return;
+            else field = fieldSelect.value;
+
+            // Get the value from the last displayed profile (if any)
+            if (allProfiles.length === 0) {
+                alert('No profiles loaded yet.');
+                return;
+            }
+
+            const lastProfile = allProfiles[allProfiles.length - 1];
+            const value = lastProfile[field];
+
+            if (value === undefined) {
+                alert(`Field "${field}" not found in the last profile.`);
+                return;
+            }
+
+            // Prepare payload: { field: value }
+            const payload = { [field]: value };
+
+            // Disable buttons during fetch
+            showMoreBtn.disabled = true;
+            sendFieldBtn.disabled = true;
+
+            const profiles = await fetchProfiles(payload);
+            if (profiles) {
+                // Replace current profiles with filtered results
+                displayProfiles(profiles);
+            }
+
+            // Buttons are re-enabled in fetchProfiles finally block
+        }
+
+        // --- Event Listeners ---
+        showMoreBtn.addEventListener('click', loadMoreProfiles);
+        sendFieldBtn.addEventListener('click', sendFieldFilter);
+        fieldSelect.addEventListener('change', updateSendFieldButton);
+
+        // Initial button states
+        document.addEventListener('DOMContentLoaded', () => {
+            resetAndFetchFirstBatch();
+        });
+        // resetAndFetchFirstBatch();
+        // updateSendFieldButton();
+    </script>
+</body>
+</html>
