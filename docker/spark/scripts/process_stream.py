@@ -10,7 +10,11 @@ class MongoDBConfig:
         self.config = {
             f"spark.mongodb.write.connection.uri": f"mongodb://spark:spark@mongodb:27017/{database}?authSource={database}",
             f"spark.mongodb.write.database": database,
-            f"spark.mongodb.write.collection": collection
+            f"spark.mongodb.write.collection": collection,
+            "spark.driver.host": "spark-driver",
+            "spark.driver.port": "7078",
+            "spark.driver.bindAddress": "0.0.0.0",
+            "spark.blickManager.port": "7079"
         }
 
     def get_spark_conf(self) -> SparkConf:
@@ -111,8 +115,8 @@ if __name__ == "__main__":
 
     processor = KafkaStreamProcessor(
         topic="persons",
-        database="test",
-        collection="raw_persons",
+        database="data",
+        collection="persons",
         json_schema=json_schema
     )
 

@@ -23,14 +23,21 @@ class Create_Data():
         self.fake = fake
 
     def create_normal_data(self):
-        """Create random data based on column name
-        by modifying original dictionary"""
+        """Create random data based on column name by
+        modifying original dictionary"""
         for value in self.schema:
             self.schema[value] = getattr(self.fake, value)()
         return
 
     def create_corrupted_data(self, random_pos: int):
-        """Create random data type by modifying original dictionary"""
+        """
+        Create random data type by modifying original dictionary
+
+        Parameters
+        ----------
+        random_pos : int :
+            Position where corrupted data will be created
+        """
         for current_pos, value in enumerate(self.schema):
             if current_pos == random_pos:
                 self.schema[value] = self.random_data_type()
@@ -40,7 +47,13 @@ class Create_Data():
 
     def create_normal_data_from_pos(self, start: int):
         """Create random data based on column name
-        from giver position by modifying orginal dictonary"""
+        from given position by modifying orginal dictionary
+
+        Parameters
+        ----------
+        start : int :
+            From which element generation should be started
+        """
         for value in islice(self.schema.keys(), start+1, None):
             self.schema[value] = getattr(self.fake, value)()
         return
@@ -87,13 +100,20 @@ def generate_data(
     """
     Generate random data based on schema provided using Faker library
 
-    Args:
-        amount_of_requests: How much requests should be send
-        lifetime: How much seconds function should run for
-        schema: Schema for json that need to be send
-        frequency: How frequent request should be send in given time frame
-        randomness: Chance for sending some random data type as value for schema
-        url: Where data should be send
+    Parameters
+    ----------
+    amount_of_requests : int :
+        How much requests should be send
+    lifetime : int :
+        How much seconds function should run for
+    schema : dict :
+        Schema for json that need to be send
+    frequency : Frequency :
+        How frequent request should be send in given time frame
+    randomness : Optional[float] :
+        Chance for sending some random data type as value for schema
+    url : str :
+        Where data should be send
     """
 
     fake = Faker()
@@ -136,4 +156,4 @@ if __name__ == "__main__":
         'ipv6': '',
         'user_id': ''
     }
-    generate_data(60, 1, schema)
+    generate_data(20, 0, schema)

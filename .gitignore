@@ -1,7 +1,1 @@
 env
-kafka
-mongodb
-rustfs+lakekeeper
-rustfs+polaris
-spark/app
-spark/data

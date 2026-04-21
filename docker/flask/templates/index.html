@@ -63,8 +63,8 @@
     </style>
 </head>
 <body>
-    <h1>Hello, World!</h1>
-    <p>Welcome to my Flask web page with JSON sender and profile display!</p>
+    <h1>:P</h1>
+    <p>There is nothing here</p>
 
     <!-- Button group with dropdown -->
     <div class="button-group">
@@ -79,7 +79,7 @@
             <option value="ipv6">IPv6</option>
             <option value="user_id">User ID</option>
         </select>
-        <button id="sendFieldBtn" disabled>Send Field</button>
+        <button id="sendFieldBtn" disabled>Sort by</button>
     </div>
 
     <!-- Container for profiles -->
@@ -97,8 +97,8 @@
         let filter_column = null;
         let metadata = null;
         let isLoading = false;
-        let field = null;
-        let allProfiles = [];               // store all profiles for field extraction
+        let field = 'user_id';
+        let allProfiles = [];
 
         // --- DOM elements ---
         const container = document.getElementById('profileContainer');
@@ -168,7 +168,7 @@
         function displayProfiles(profiles, append = false) {
             if (!append) {
                 container.innerHTML = '';
-                allProfiles = profiles;               // store for field extraction
+                allProfiles = profiles;
                 filter_column = profiles.length > 0 ? profiles[profiles.length - 1][filter_column] : null;
                 metadata = profiles.length > 0 ? profiles[profiles.length - 1].user_id : null;
             } else {
@@ -200,10 +200,10 @@
             filter_column = null;
             metadata = null;
             showMoreBtn.textContent = 'Show More';
-            fieldSelect.value = '';          // reset dropdown
+            fieldSelect.value = '';
             updateSendFieldButton();
 
-            const profiles = await fetchProfiles({});   // empty payload = first batch
+            const profiles = await fetchProfiles({});
             if (profiles) {
                 displayProfiles(profiles);
             }
@@ -218,7 +218,7 @@
             const payload = { [field]: filter_column_val, ['metadata']: metadata_val };
             const profiles = await fetchProfiles(payload);
             if (profiles) {
-                displayProfiles(profiles, true);   // append
+                displayProfiles(profiles, true);
             }
         }
 
@@ -235,6 +235,7 @@
 
             const lastProfile = allProfiles[allProfiles.length - 1];
             const value = lastProfile[field];
+            const metadata_val = lastProfile['user_id'];
 
             if (value === undefined) {
                 alert(`Field "${field}" not found in the last profile.`);
@@ -242,7 +243,7 @@
             }
 
             // Prepare payload: { field: value }
-            const payload = { [field]: value };
+            const payload = { [field]: value, ['metadata']: metadata_val };
 
             // Disable buttons during fetch
             showMoreBtn.disabled = true;
@@ -253,8 +254,6 @@
                 // Replace current profiles with filtered results
                 displayProfiles(profiles);
             }
-
-            // Buttons are re-enabled in fetchProfiles finally block
         }
 
         // --- Event Listeners ---
@@ -266,8 +265,6 @@
         document.addEventListener('DOMContentLoaded', () => {
             resetAndFetchFirstBatch();
         });
-        // resetAndFetchFirstBatch();
-        // updateSendFieldButton();
     </script>
 </body>
 </html>

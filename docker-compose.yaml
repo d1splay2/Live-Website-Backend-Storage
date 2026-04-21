@@ -6,53 +6,87 @@ services:
       - 9092:9092
     environment:
       KRAFT_MODE: true
-
-      CLUSTER_ID: MkU3OEVBQTcwNTJENDM2Qk
       KAFKA_NODE_ID: 1
+      CLUSTER_ID: MkU3OEVBQTcwNTJENDM2Qk
 
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-
-      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
-
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     volumes:
-      - ./kafka/logs:/tmp/kraft-combined-logs
+      - kafka-logs:/tmp/kraft-combined-logs
+    healthcheck:
+      test: [ "CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list" ]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     networks:
-      - net
+      - kafka-spark
+      - kafka-interceptor
+
+  kafka-interceptor:
+    image: python:3.12.13
+    container_name: kafka-interceptor
+    working_dir: /opt
+    ports:
+      - 5050:5000
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./docker/kafka-interceptor/interceptor.py:/opt/interceptor.py
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:5000/ping" ]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    command: sh -c 'pip install confluent_kafka pymongo && python interceptor.py'
+    networks:
+      - mongo-interceptor
+      - kafka-interceptor
 
   mongodb:
     image: mongodb/mongodb-community-server:7.0-ubi8
     container_name: mongodb
     ports:
       - 27017:27017
+    env_file:
+      - ./.env
     environment:
-      - MONGODB_INITDB_ROOT_USERNAME=mongodb
-      - MONGODB_INITDB_ROOT_PASSWORD=mongodb
+      - MONGODB_INITDB_ROOT_USERNAME=$MONGO_INIT_USERNAME
+      - MONGODB_INITDB_ROOT_PASSWORD=$MONGO_INIT_PASSWORD
     volumes:
-      - ./mongodb:/data/db
+      - mongo-db:/data/db
+      - ./docker/mongodb/init.js:/docker-entrypoint-initdb.d/init.js
+    healthcheck:
+      test: [ "CMD-SHELL", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 15s
     networks:
-      - net
+      - mongo-spark
+      - mongo-express
+      - mongo-interceptor
 
-  mongodb_express:
+  mongodb-express:
     image: mongo-express:latest
-    container_name: mongodb_express
+    container_name: mongodb-express
+    depends_on:
+      mongodb:
+        condition: service_healthy
     ports:
       - 8082:8081
     environment:
       - ME_CONFIG_MONGODB_SERVER=mongodb
-      - ME_CONFIG_MONGODB_PORT=27017
-      - ME_CONFIG_MONGODB_ADMINUSERNAME=mongodb
-      - ME_CONFIG_MONGODB_ADMINPASSWORD=mongodb
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=$MONGO_INIT_USERNAME
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=$MONGO_INIT_PASSWORD
     networks:
-      - net
-    depends_on:
-      - mongodb
+      - mongo-express
 
   spark-master:
     image: spark:python3
@@ -63,12 +97,18 @@ services:
     environment:
       - SPARK_MODE=master
     volumes:
-      - ./spark/app:/opt/spark-app
-      - ./spark/data:/opt/spark-data
-    networks:
-      - net
+      - spark-app:/opt/spark-app
+      - spark-data:/opt/spark-data
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:8080" ]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 15s
     command: >
       bash -c "/opt/spark/sbin/start-master.sh && tail -f /dev/null"
+    networks:
+      - spark-net
 
   spark-worker:
     image: spark:python3
@@ -80,26 +120,71 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_MASTER_URL=spark://spark-master:7077
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://127.0.0.1:8081" ]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 15s
     command: >
       bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /dev/null"
     networks:
-      - net
+      - spark-net
+      - kafka-spark
+      - mongo-spark
 
   spark-driver:
     image: spark:python3
     container_name: spark-driver
+    ports:
+      - 4040:4040
+      - 7078:7078
+      - 7079:7079
     depends_on:
-      - spark-master
-      - spark-worker
+      spark-master:
+        condition: service_healthy
+      spark-worker:
+        condition: service_healthy
+      kafka-interceptor:
+        condition: service_healthy
+    environment:
+      - SPARK_DRIVER_HOST=spark-driver
+      - SPARK_DRIVER_BIND_ADDRESS=0.0.0.0
+      - SPARK_UI_PORT=4040
+      - SPARK_DRIVER_PORT=7078
+      - SPARK_BLOCKMANAGER_PORT=7079
     volumes:
-      - ./spark/scripts:/opt/spark-apps
-      - ./spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
-    command: >
-      bash -c "tail -f /dev/null" &&
-              "mkdir /tmp/.ivy2"
+      - ./docker/spark/scripts:/opt/spark-apps
+      - ./docker/spark/conf:/opt/spark/conf
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/spark/bin/spark-submit --version" ]
+      interval: 1m
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    command: bash -c "/opt/spark/bin/spark-submit /opt/spark-apps/process_stream.py"
     networks:
-      - net
+      - spark-net
+      - kafka-spark
+      - mongo-spark
+
+  flask:
+    build: ./docker/flask
+    image: flask-website:latest
+    container_name: flask
+    ports:
+      - 5000:5000
 
 networks:
-  net:
-    driver: bridge
+  spark-net:
+  kafka-spark:
+  kafka-interceptor:
+  mongo-spark:
+  mongo-express:
+  mongo-interceptor:
+
+volumes:
+  spark-app:
+  spark-data:
+  mongo-db:
+  kafka-logs:
