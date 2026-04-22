@@ -26,7 +26,7 @@ But overall focus in this project was on understanding basic [Apache Spark Strea
 <a name="preview"></a>
 <h2>Website Preview</h2>
 
-[![Preview](https://img.youtube.com/vi/fTuURojaeWA?si=QAXfz-ytSu1vS9WJ)/mqdefault.jpg))](https://youtu.be/fTuURojaeWA?si=QAXfz-ytSu1vS9WJ)
+[![Preview](https://img.youtube.com/vi/fTuURojaeWA/mqdefault.jpg)](https://youtu.be/fTuURojaeWA?si=QAXfz-ytSu1vS9WJ)
 
 <a name="tools-used"></a>
 <h2>Tools used</h2>
