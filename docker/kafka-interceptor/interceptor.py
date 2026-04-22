@@ -188,6 +188,7 @@ def remove_id_column(documents: list[dict]):
 
 def fetch_from_mongo(byte: bytes, collection: Collection):
     data = json.loads(byte)
+    print(data, flush=True)
 
     # If == 0 mean user just entered the page, intial data will be pulled
     if len(data.items()) == 0:
