@@ -156,4 +156,8 @@ if __name__ == "__main__":
         'ipv6': '',
         'user_id': ''
     }
-    generate_data(20, 0, schema)
+    generate_data(
+        amount_of_requests=20,
+        lifetime=0,
+        schema=schema
+    )
