@@ -26,6 +26,13 @@ But overall focus in this project was on understanding basic [Apache Spark Strea
 <a name="preview"></a>
 <h2>Website Preview</h2>
 
+I'v made cuts in video but this is sequence of actions that happend.
+
+1. I show that i have 10 documents in MongoDB and that they rendered in website
+2. I send 60 requests from API
+3. Update page in 5-10 seconds and show that they appear
+
+
 [![Preview](https://img.youtube.com/vi/fTuURojaeWA/mqdefault.jpg)](https://youtu.be/fTuURojaeWA?si=QAXfz-ytSu1vS9WJ)
 
 <a name="tools-used"></a>
